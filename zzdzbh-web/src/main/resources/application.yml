@@ -1,0 +1,36 @@
+# 项目配置
+spring:
+  application:
+    name: medusa-wechat-web
+  profiles:
+    active: dev
+
+server:
+  servlet:
+    # 设置统一前缀
+#    context-path: /zzdzbh/
+    # 上传文件限制
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 100MB
+# MyBatis Plus 配置
+mybatis-plus:
+  global-config:
+    # 数据库相关配置
+    db-config:
+      #主键类型  AUTO:"数据库ID自增", INPUT:"用户输入ID",ID_WORKER:"全局唯一ID (数字类型唯一ID)", UUID:"全局唯一ID UUID";
+      id-type: AUTO
+      #驼峰下划线转换
+      column-underline: true
+      #逻辑删除配置
+      logic-delete-value: 1 #已删除
+      logic-not-delete-value: 0 #未删除
+
+  configuration:
+    # 配置sql输出
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    cache-enabled: true
+    #枚举属性转换器
+    default-enum-type-handler: com.baomidou.mybatisplus.extension.handlers.MybatisEnumTypeHandler
+  type-handlers-package: com.egls.cashloan.wechat.core.config.mybatis
+
