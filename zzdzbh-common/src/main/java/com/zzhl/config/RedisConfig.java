@@ -1,14 +1,20 @@
 package com.zzhl.config;
 
-import com.fasterxml.jackson.annotation.JsonAutoDetect;
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import com.fasterxml.jackson.annotation.PropertyAccessor;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
-import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateDeserializer;
+import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
+import com.fasterxml.jackson.datatype.jsr310.deser.LocalTimeDeserializer;
+import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateSerializer;
+import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
+import com.fasterxml.jackson.datatype.jsr310.ser.LocalTimeSerializer;
+import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CachingConfigurerSupport;
+import org.springframework.cache.interceptor.KeyGenerator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
@@ -17,11 +23,15 @@ import org.springframework.data.redis.cache.RedisCacheWriter;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.Jackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
-import org.springframework.lang.Nullable;
 
-import org.springframework.cache.interceptor.KeyGenerator;
 import java.lang.reflect.Method;
+import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 
 /**
  * 【描述：】
@@ -30,34 +40,8 @@ import java.lang.reflect.Method;
  * @Date: 2020/09/11/ 16:36
  */
 @Slf4j
-//@ConditionalOnMissingBean
 @Configuration
 public class RedisConfig extends CachingConfigurerSupport {
-    /**
-     * redisTemplate 默认的序列化方式为 JdkSerializationRedisSerializer
-     * StringRedisTemplate 的默认序列化方式为 StringRedisSerializer
-     * 使用 fastJsonRedisSerializer 替换默认序列化方式
-     */
-//    @Bean
-//    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory redisConnectionFactory) {
-//        RedisTemplate<String, Object> redisTemplate = new RedisTemplate<>();
-//        redisTemplate.setConnectionFactory(redisConnectionFactory);
-//
-//        FastJsonRedisSerializer<Object> fastJsonRedisSerializer = new FastJsonRedisSerializer<>(Object.class);
-//
-//        // 设置值value的序列化方式
-//        redisTemplate.setValueSerializer(fastJsonRedisSerializer);
-//        redisTemplate.setHashValueSerializer(fastJsonRedisSerializer);
-//
-//        // 设置键key的序列化方式
-//        redisTemplate.setKeySerializer(new StringRedisSerializer());
-//        redisTemplate.setHashKeySerializer(new StringRedisSerializer());
-//
-//        redisTemplate.afterPropertiesSet();
-//        return redisTemplate;
-//    }
-
-
 
     /**
      * 自定义缓存key的生成策略。默认的生成策略是看不懂的(乱码内容)
@@ -100,29 +84,59 @@ public class RedisConfig extends CachingConfigurerSupport {
     public RedisTemplate<String, Object> redisTemplate(LettuceConnectionFactory factory) {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(factory);
-        Jackson2JsonRedisSerializer jackson2JsonRedisSerializer = new Jackson2JsonRedisSerializer(Object.class);
-        ObjectMapper om = new ObjectMapper();
-        om.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.ANY);
 
-        //om.enableDefaultTyping(ObjectMapper.DefaultTyping.NON_FINAL);
-        om.activateDefaultTyping(LaissezFaireSubTypeValidator.instance ,
-                ObjectMapper.DefaultTyping.NON_FINAL, JsonTypeInfo.As.PROPERTY);
-
-//        om.activateDefaultTyping(PolymorphicTypeValidator, ObjectMapper.DefaultTyping)
-        jackson2JsonRedisSerializer.setObjectMapper(om);
         StringRedisSerializer stringRedisSerializer = new StringRedisSerializer();
         // 在使用注解@Bean返回RedisTemplate的时候，同时配置hashKey与hashValue的序列化方式。
         // key采用String的序列化方式
         template.setKeySerializer(stringRedisSerializer);
         // value 序 列 化 方 式 采 用 jackson
         //使用它操作普通字符串，会出现Could not read JSON  template.setValueSerializer(jackson2JsonRedisSerializer);
-        template.setValueSerializer(stringRedisSerializer);
+        template.setValueSerializer(valueSerializer());
         // hash的key也采用String的序列化方式
         template.setHashKeySerializer(stringRedisSerializer);
         // hash的value序列化方式采用jackson
-        template.setHashValueSerializer(jackson2JsonRedisSerializer);
+        template.setHashValueSerializer(valueSerializer());
         template.afterPropertiesSet();
         return template;
+    }
+
+
+    /**
+     *【描述】：value采用序列化策略
+     *
+     * @author tanggw
+     * @date 2020-9-14 15:11
+     */
+    private RedisSerializer<Object> valueSerializer() {
+        Jackson2JsonRedisSerializer<Object> serializer = new Jackson2JsonRedisSerializer<>(Object.class);
+        serializer.setObjectMapper(objectMapper());
+        return serializer;
+    }
+
+
+
+    /** 默认日期时间格式 */
+    public static final String DEFAULT_DATE_TIME_FORMAT = "yyyy-MM-dd HH:mm:ss";
+    /** 默认日期格式 */
+    public static final String DEFAULT_DATE_FORMAT = "yyyy-MM-dd";
+    /** 默认时间格式 */
+    public static final String DEFAULT_TIME_FORMAT = "HH:mm:ss";
+
+
+    public ObjectMapper objectMapper(){
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        objectMapper.disable(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE);
+        objectMapper.setDateFormat(new SimpleDateFormat(DEFAULT_DATE_TIME_FORMAT));
+        JavaTimeModule javaTimeModule = new JavaTimeModule();
+        javaTimeModule.addSerializer(LocalDateTime.class,new LocalDateTimeSerializer(DateTimeFormatter.ofPattern(DEFAULT_DATE_TIME_FORMAT)));
+        javaTimeModule.addSerializer(LocalDate.class,new LocalDateSerializer(DateTimeFormatter.ofPattern(DEFAULT_DATE_FORMAT)));
+        javaTimeModule.addSerializer(LocalTime.class,new LocalTimeSerializer(DateTimeFormatter.ofPattern(DEFAULT_TIME_FORMAT)));
+        javaTimeModule.addDeserializer(LocalDateTime.class,new LocalDateTimeDeserializer(DateTimeFormatter.ofPattern(DEFAULT_DATE_TIME_FORMAT)));
+        javaTimeModule.addDeserializer(LocalDate.class,new LocalDateDeserializer(DateTimeFormatter.ofPattern(DEFAULT_DATE_FORMAT)));
+        javaTimeModule.addDeserializer(LocalTime.class,new LocalTimeDeserializer(DateTimeFormatter.ofPattern(DEFAULT_TIME_FORMAT)));
+        objectMapper.registerModule(javaTimeModule).registerModule(new ParameterNamesModule());
+        return objectMapper;
     }
 }
 
